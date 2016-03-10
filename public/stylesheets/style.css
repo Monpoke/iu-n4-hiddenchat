@@ -1,0 +1,11 @@
+body {
+  font: 14px "Lucida Grande", Helvetica, Arial, sans-serif;
+}
+
+.navbar-static-top {
+  margin-bottom: 19px;
+}
+
+a {
+  color: #00B7FF;
+}
