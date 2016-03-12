@@ -220,36 +220,35 @@ var sendEncryptedMessage = function (room, client, message) {
 
     console.log("SEND FROM " + client.socket.id);
 
+    var dateD = new Date();
+    var date = dateD.getHours()+":"+dateD.getMinutes();
+
     for (var k in CLIENTS) {
         if (typeof CLIENTS[k] !== 'function') {
             var cli = CLIENTS[k];
-            console.log("for... " + k);
             if (cli.room != room) {
                 continue;
             }
 
-            sendTo(cli.socket, message, cli, client);
+            sendTo(cli.socket, message, cli, client, date);
         }
     }
 
 }
 
 
-var sendTo = function (socket, message, cli, client) {
+var sendTo = function (socket, message, cli, client, date) {
 
     var params = {
         msg: message,
         encrypt_for: cli.encrypter
     };
-    console.log("1" + socket.id);
     kbpgp.box(params, function (err, encrypted, buffer) {
-        console.log("2" + socket.id);
-        console.log("Send to client: ", cli.socket.id);
 
         sendMessage(cli.socket, {
             username: client.username,
             content: encrypted,
-            date: '0000'
+            date: date
         });
     });
 

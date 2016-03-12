@@ -46,9 +46,25 @@ TCHAT = {
     // contains all messages from start of session
     messages: [],
 
+
+    reset: function(){
+      this.encrypter=null;
+        this.publicKey="";
+        this.privateKey="";
+        this.passphrase="";
+        this.roomPublicKey="";
+        this.ring=null;
+        this.messages=[];
+        try {
+            socket.close();
+        }catch(e){}
+
+
+    },
+
     init: function (callback) {
         if (TCHAT.socket != null) {
-            return callback(true);
+            TCHAT.reset();
         }
 
         try {

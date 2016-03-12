@@ -15,6 +15,8 @@ hiddenChatControllers.controller('JoinRoom', ['$scope', '$routeParams',
     function ($scope, $routeParams) {
         var hash = $routeParams.hash;
         $scope.room = hash;
+        $scope.logged = "Loading...";
+
 
         // create a connection to tchat room
         TCHAT.init(function(s){
