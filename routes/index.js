@@ -11,6 +11,11 @@ router.get('/pages/home', function(req, res, next) {
   res.render('templates/home');
 });
 
+/* GET RETURNS home*/
+router.get('/pages/create', function(req, res, next) {
+  res.render('templates/blank');
+});
+
 
 /* GET RETURNS*/
 router.get('/pages/room', function(req, res, next) {

@@ -5,9 +5,9 @@ hiddenChatControllers.controller('HomePage', ['$scope', '$http',
     }]
 );
 
-hiddenChatControllers.controller('CreateRoom', ['$scope', '$http',
-    function ($scope, $http) {
-        console.log("create room...");
+hiddenChatControllers.controller('CreateRoom', ['$scope', '$window',
+    function ($scope, $window) {
+        $window.location.href ="/#/room/"+TCHAT.makeid();
     }]
 );
 
@@ -17,17 +17,18 @@ hiddenChatControllers.controller('JoinRoom', ['$scope', '$routeParams',
         $scope.room = hash;
 
         // create a connection to tchat room
-        if (TCHAT.init()) {
+        TCHAT.init(function(s){
+            // once RSA is generated
             TCHAT.loginTO(hash, function (state) {
+                if (state === false) {
+                    return;
+                }
+
                 $scope.$apply(function () {
                     $scope.passphrase = TCHAT.passphrase;
                     $scope.publickey = TCHAT.publicKey;
                     $scope.roomkey = TCHAT.roomPublicKey;
                 });
-
-                if (state === false) {
-                    return;
-                }
 
                 /**
                  * If user receive a message
@@ -63,14 +64,14 @@ hiddenChatControllers.controller('JoinRoom', ['$scope', '$routeParams',
                 $("[data-id='messageContent']").val("").focus();
             }
 
-            $(document).off('keypress').on('keypress', "[data-id='messageContent']", function (e) {
+            $(document).on('keypress', "[data-id='messageContent']", function (e) {
                 if (e.keyCode === 13) {
                     send();
                 }
             });
-            $(document).off('click').on('click', "[data-id='messageSend']", send);
+            $(document).on('click', "[data-id='messageSend']", send);
 
-        }
+        });
 
 
     }]

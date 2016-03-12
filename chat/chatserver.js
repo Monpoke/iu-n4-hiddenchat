@@ -1,4 +1,5 @@
-var NodeRSA = require('node-rsa');
+var kbpgp = require('kbpgp');
+
 
 /**
  * Contains all created rooms.
@@ -14,78 +15,185 @@ var CLIENTS = new Object();
 
 
 Chatserver = {
-    io:null,
+    io: null,
+
+    sendEventLogged: function (socket, data, resp) {
+
+        // SEND PUBLIC KEY TO CLIENT
+        resp({key: ROOMS[data.room].publicKey});
+
+        sendLogged(data.room);
+        sendMessage(socket, {
+            username: 'SERVER',
+            content: 'You are now connected!',
+            date: 'now'
+        });
+
+    },
 
     init: function (io) {
         Chatserver.io = io;
-        io.on('connection', function (socket) {
-            socket.on('logRoom', function (data, resp) {
-                console.log(data);
 
+        /**
+         * On client connection
+         */
+        io.on('connection', function (socket) {
+
+            socket.on('disconnect', function () {
+                var client = CLIENTS[socket.id];
+
+                if (client == undefined) {
+                    console.log("skipped");
+                    return;
+                }
+
+                ROOMS[client.room].nbUsersLogged--;
+
+                if (ROOMS[client.room].nbUsersLogged <= 0) {
+                    delete ROOMS[client.room];
+                    console.log(client.room + " deleted!");
+                } else {
+                    sendLogged(client.room);
+                }
+
+                delete CLIENTS[socket.id];
+            });
+
+
+            socket.on('logRoom', function (data, resp) {
                 // on store les datas de la socket
                 CLIENTS[socket.id] = {
                     socket: socket,
                     room: data.room,
                     publicKey: data.publicKey,
+                    encrypter: null,
                     username: "U-" + Chatserver.makeClient(5)
                 };
+
+                console.log("User ", socket.id, " created!");
 
                 // join room
                 socket.join('/' + data.room);
 
-                if (typeof ROOMS[data.room] === 'undefined') {
-                    // generate a key for room
-                    var key = new NodeRSA({b: 512});
-                    var publicKey = key.exportKey('public');
 
-                    // save data
-                    ROOMS[data.room] = {
-                        nbUsersLogged: 1,
-                        keys: key,
-                        publicKey: publicKey
+                loadClientKey(socket.id, data.publicKey);
+
+
+                if (typeof ROOMS[data.room] === 'undefined') {
+
+                    var options = {
+                        userIds: [{roomId: data.room}], // multiple user IDs
+                        numBits: 512,                                            // RSA key size
+                        passphrase: 'APRIVATEHIDENPASSWORD'         // protects the private key
                     };
 
-                    console.log(publicKey);
+                    /**
+                     * Generate a key
+                     */
+                    var F = kbpgp["const"].openpgp;
+                    var SIZE = 1024;
+                    var opts = {
+                        userid: "ServerRoomId:" + data.room,
+                        primary: {
+                            nbits: SIZE,
+                            flags: F.certify_keys | F.sign_data | F.auth | F.encrypt_comm | F.encrypt_storage,
+                            expire_in: 0  // never expire
+                        },
+                        subkeys: [
+                            {
+                                nbits: SIZE / 2,
+                                flags: F.sign_data,
+                                expire_in: 86400 * 365 * 8 // 8 years
+                            }, {
+                                nbits: SIZE / 2,
+                                flags: F.encrypt_comm | F.encrypt_storage,
+                                expire_in: 86400 * 365 * 8
+                            }
+                        ]
+                    };
+
+
+                    var nbGenerated = 0;
+                    var privateKey, publicKey, keyEn;
+
+                    function callCallback() {
+                        nbGenerated++;
+                        if (nbGenerated >= 2) {
+
+                            // save data
+                            ROOMS[data.room] = {
+                                nbUsersLogged: 1,
+                                key: keyEn,
+                                privateKey: privateKey,
+                                publicKey: publicKey
+                            };
+
+                            Chatserver.sendEventLogged(socket, data, resp);
+                        }
+                    }
+
+
+                    kbpgp.KeyManager.generate(opts, function (err, key) {
+                        if (!err) {
+                            keyEn = key;
+                            key.sign({}, function (err) {
+                                key.export_pgp_private({
+                                    passphrase: "SALTER" + data.room,
+                                }, function (err, pgp_private) {
+                                    privateKey = pgp_private;
+                                    callCallback();
+                                });
+                                key.export_pgp_public({}, function (err, pgp_public) {
+                                    publicKey = pgp_public;
+                                    callCallback();
+                                });
+                            });
+                        }
+                    });
+
 
                 } else {
+
                     // up users logged
                     ROOMS[data.room].nbUsersLogged++;
+                    Chatserver.sendEventLogged(socket, data, resp);
                 }
 
 
-                // SEND PUBLIC KEY TO CLIENT
-                resp({key: ROOMS[data.room].publicKey});
-
-                sendLogged(data.room);
-                sendMessage(socket, {
-                    username: 'SERVER',
-                    content: 'You are now connected!',
-                    date: 'now'
-                });
             });
 
             socket.on('sendMessage', function (data) {
+                var room = CLIENTS[socket.id].room;
 
-                // get each client one by one
-                for (var clientKe in CLIENTS) {
-                    if (CLIENTS.hasOwnProperty(clientKe)) {
-                        var client = CLIENTS[clientKe];
+                // decrypt
+                var message = data.message;
 
-                        // next client
-                        if (client.room != CLIENTS[socket.id].room) {
-                            continue;
+                try {
+
+                    var ring = new kbpgp.keyring.KeyRing;
+                    var pgp_msg = message;
+                    ring.add_key_manager(ROOMS[room].key);
+
+                    //console.log(ROOMS[room].key);
+
+                    kbpgp.unbox({keyfetch: ring, armored: pgp_msg}, function (err, literals) {
+                        if (err != null) {
+                            return console.log("Problem: " + err);
+                        } else {
+                            message = literals[0].toString();
+
+                            /**
+                             * SEND MESSAGE to himself
+                             */
+                            sendEncryptedMessage(room, CLIENTS[socket.id], message);
+
                         }
+                    });
 
-                        /**
-                         * @TODO: Cryptage à faire, individuel, donc on ne peut pas utiliser le broadcast...
-                         */
-                            // send to this client
-                        sendMessage(client.socket, {
-                            content: data.message,
-                            username: CLIENTS[socket.id].username,
-                            date: '0000'
-                        });
-                    }
+
+                } catch (e) {
+                    message = "Exception: " + message + " =======> " + e;
+                    console.log(e);
                 }
 
 
@@ -108,6 +216,45 @@ Chatserver = {
 
 };
 
+var sendEncryptedMessage = function (room, client, message) {
+
+    console.log("SEND FROM " + client.socket.id);
+
+    for (var k in CLIENTS) {
+        if (typeof CLIENTS[k] !== 'function') {
+            var cli = CLIENTS[k];
+            console.log("for... " + k);
+            if (cli.room != room) {
+                continue;
+            }
+
+            sendTo(cli.socket, message, cli, client);
+        }
+    }
+
+}
+
+
+var sendTo = function (socket, message, cli, client) {
+
+    var params = {
+        msg: message,
+        encrypt_for: cli.encrypter
+    };
+    console.log("1" + socket.id);
+    kbpgp.box(params, function (err, encrypted, buffer) {
+        console.log("2" + socket.id);
+        console.log("Send to client: ", cli.socket.id);
+
+        sendMessage(cli.socket, {
+            username: client.username,
+            content: encrypted,
+            date: '0000'
+        });
+    });
+
+};
+
 
 var sendMessage = function (socket, message) {
     socket.emit('receiveMessage', message);
@@ -116,7 +263,24 @@ var sendMessage = function (socket, message) {
 
 var sendLogged = function (room) {
     Chatserver.io.in('/' + room).emit('logged', ROOMS[room].nbUsersLogged);
-    console.log("Send to /"+room + " -> " +ROOMS[room].nbUsersLogged);
+    console.log("Send to /" + room + " -> " + ROOMS[room].nbUsersLogged);
+};
+
+
+var loadClientKey = function (socketId, publicKey) {
+
+    kbpgp.KeyManager.import_from_armored_pgp({
+        armored: publicKey
+    }, function (err, keyEngine) {
+        if (!err) {
+            CLIENTS[socketId].encrypter = keyEngine;
+            console.log("USER key is loaded");
+        } else {
+            console.error("Can't load user key...");
+            console.error(err);
+        }
+    });
+
 };
 
 
