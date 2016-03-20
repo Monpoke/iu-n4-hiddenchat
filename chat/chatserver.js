@@ -17,6 +17,12 @@ var CLIENTS = new Object();
 Chatserver = {
     io: null,
 
+    /**
+     * When a client connects to room.
+     * @param socket
+     * @param data
+     * @param resp
+     */
     sendEventLogged: function (socket, data, resp) {
 
         // SEND PUBLIC KEY TO CLIENT
@@ -31,6 +37,10 @@ Chatserver = {
 
     },
 
+    /**
+     * The server is launched.
+     * @param io
+     */
     init: function (io) {
         Chatserver.io = io;
 
@@ -39,6 +49,9 @@ Chatserver = {
          */
         io.on('connection', function (socket) {
 
+            /**
+             * Client is disonnected.
+             */
             socket.on('disconnect', function () {
                 var client = CLIENTS[socket.id];
 
@@ -60,6 +73,9 @@ Chatserver = {
             });
 
 
+            /**
+             * Client connects to a room.
+             */
             socket.on('logRoom', function (data, resp) {
                 // on store les datas de la socket
                 CLIENTS[socket.id] = {
@@ -79,7 +95,11 @@ Chatserver = {
                 loadClientKey(socket.id, data.publicKey);
 
 
+                /**
+                 * CREATE THE ROOM
+                 */
                 if (typeof ROOMS[data.room] === 'undefined') {
+
 
                     var options = {
                         userIds: [{roomId: data.room}], // multiple user IDs
@@ -133,6 +153,11 @@ Chatserver = {
                     }
 
 
+                    /**
+                     * Asynchronisous task
+                     * Callback needed.
+                     * Generate a key.
+                     */
                     kbpgp.KeyManager.generate(opts, function (err, key) {
                         if (!err) {
                             keyEn = key;
@@ -162,6 +187,9 @@ Chatserver = {
 
             });
 
+            /**
+             * Receives a message from client.
+             */
             socket.on('sendMessage', function (data) {
                 var room = CLIENTS[socket.id].room;
 
@@ -204,6 +232,11 @@ Chatserver = {
     },
 
 
+    /**
+     * Generate an username ID.
+     * @param nbCar
+     * @returns {string}
+     */
     makeClient: function (nbCar) {
         var text = "";
         var possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -216,12 +249,19 @@ Chatserver = {
 
 };
 
+
+/**
+ * Crypt the message with right public key.
+ * @param room
+ * @param client
+ * @param message
+ */
 var sendEncryptedMessage = function (room, client, message) {
 
     console.log("SEND FROM " + client.socket.id);
 
     var dateD = new Date();
-    var date = dateD.getHours()+":"+dateD.getMinutes();
+    var date = dateD.getHours() + ":" + dateD.getMinutes();
 
     for (var k in CLIENTS) {
         if (typeof CLIENTS[k] !== 'function') {
@@ -236,7 +276,14 @@ var sendEncryptedMessage = function (room, client, message) {
 
 }
 
-
+/**
+ * Send to a client in room.
+ * @param socket
+ * @param message
+ * @param cli
+ * @param client
+ * @param date
+ */
 var sendTo = function (socket, message, cli, client, date) {
 
     var params = {
@@ -266,6 +313,11 @@ var sendLogged = function (room) {
 };
 
 
+/**
+ * Loads a client public key.
+ * @param socketId
+ * @param publicKey
+ */
 var loadClientKey = function (socketId, publicKey) {
 
     kbpgp.KeyManager.import_from_armored_pgp({
