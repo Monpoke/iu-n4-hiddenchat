@@ -8,4 +8,5 @@
 out
 gen
 
+public/libs
 node_modules
